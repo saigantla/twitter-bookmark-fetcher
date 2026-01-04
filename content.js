@@ -275,6 +275,9 @@ function extractTweetData(tweetEl) {
   // Deduplicate media URLs
   const uniqueMediaUrls = [...new Set(mediaUrls)];
 
+  // Extract quoted tweet data (if present)
+  const { quotedContent, quotedUrl } = extractQuotedTweet(tweetEl);
+
   return {
     id,
     date: formatDate(date),
@@ -282,8 +285,63 @@ function extractTweetData(tweetEl) {
     handle,
     content,
     url: permalink,
-    media: uniqueMediaUrls.join(' | ')
+    media: uniqueMediaUrls.join(' | '),
+    quotedContent,
+    quotedUrl
   };
+}
+
+// Extract quoted tweet content and URL from a tweet element
+function extractQuotedTweet(tweetEl) {
+  // Find the quoted tweet container
+  // Twitter uses various containers for quoted tweets
+  const quotedTweetContainer = tweetEl.querySelector('[data-testid="quoteTweet"]') ||
+                                findQuotedTweetContainer(tweetEl);
+
+  if (!quotedTweetContainer) {
+    return { quotedContent: '', quotedUrl: '' };
+  }
+
+  // Get quoted tweet URL from the link
+  const quotedLink = quotedTweetContainer.querySelector('a[href*="/status/"]');
+  let quotedUrl = '';
+  if (quotedLink) {
+    quotedUrl = quotedLink.href;
+  }
+
+  // Get quoted tweet text content
+  const quotedTextEl = quotedTweetContainer.querySelector('[data-testid="tweetText"]');
+  let quotedContent = '';
+  if (quotedTextEl) {
+    quotedContent = quotedTextEl.innerText.trim();
+  }
+
+  return { quotedContent, quotedUrl };
+}
+
+// Find quoted tweet container by looking for nested tweet-like structures
+function findQuotedTweetContainer(tweetEl) {
+  // Look for containers that have role="link" and contain tweet-like content
+  const candidates = tweetEl.querySelectorAll('[role="link"]');
+
+  for (const candidate of candidates) {
+    // Check if this looks like a quoted tweet (has time element and text)
+    const hasTime = candidate.querySelector('time[datetime]');
+    const hasText = candidate.querySelector('[data-testid="tweetText"]');
+    const hasUserName = candidate.querySelector('[data-testid="User-Name"]');
+
+    // Make sure it's not the main tweet's elements
+    if (hasTime && (hasText || hasUserName)) {
+      // Verify this is a nested container, not the main tweet
+      const isNested = candidate.closest('[data-testid="tweet"]') === tweetEl &&
+                       candidate !== tweetEl;
+      if (isNested) {
+        return candidate;
+      }
+    }
+  }
+
+  return null;
 }
 
 // Format ISO date to readable format
@@ -304,7 +362,7 @@ function downloadCSV() {
     return;
   }
 
-  const headers = ['Date', 'Author', 'Handle', 'Content', 'URL', 'Media'];
+  const headers = ['Date', 'Author', 'Handle', 'Content', 'URL', 'Media', 'Quoted Content', 'Quoted URL'];
   const rows = [headers.join(',')];
 
   tweets.forEach((tweet) => {
@@ -314,7 +372,9 @@ function downloadCSV() {
       escapeCSV(tweet.handle),
       escapeCSV(tweet.content),
       escapeCSV(tweet.url),
-      escapeCSV(tweet.media)
+      escapeCSV(tweet.media),
+      escapeCSV(tweet.quotedContent),
+      escapeCSV(tweet.quotedUrl)
     ];
     rows.push(row.join(','));
   });
